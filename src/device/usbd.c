@@ -50,19 +50,19 @@ volatile usbd_sof_t _usbd_sof = {
   .interval_us = 1000,
   .avg_interval_us = 1000,
   .lock_state = USBD_SOF_UNLOCKED,
-  .eoa_margin_us = 5
-};
-volatile usbd_sof_err_t _usbd_sof_err = {
-  .cum_err = 0
+  .eoa_margin_us = 5,
+  .err = {
+    .cum_err = 0
+  }
 };
 
 
 //This two fuction are used by the direct and sythetic handlers to write their value of the sof timing for error calculation
 static inline void usbd_sof_direct_for_error(uint32_t sof){
-      _usbd_sof_err.sof_direct[_usbd_sof_err.ind] = (uint16_t) sof; //We only store the first 16 bits
+      _usbd_sof.err.sof_direct[_usbd_sof.err.ind] = (uint16_t) sof; //We only store the first 16 bits
 }
 static inline void usbd_sof_synth_for_error(uint32_t sof){
-      _usbd_sof_err.sof_synthetic[_usbd_sof_err.ind] = (uint16_t) sof; //We only store the first 16 bits
+      _usbd_sof.err.sof_synthetic[_usbd_sof.err.ind] = (uint16_t) sof; //We only store the first 16 bits
 }
 uint32_t usbd_get_sof_us_32(usbd_sof_t * sof);
 uint16_t usbd_get_sof_us_16(usbd_sof_t * sof);
@@ -134,7 +134,7 @@ static void usbd_sof_set_synthetic_handler(void){
 }
 #define ABS(a)	   (((a) < 0) ? -(a) : (a))
 static void usbd_sof_mid_frame_handler(void){
-        volatile usbd_sof_err_t *se =  &_usbd_sof_err;  //This pointer is just to reduce code clutter
+        volatile usbd_sof_err_t *se =  &_usbd_sof.err;  //This pointer is just to reduce code clutter
 
         sof_interval_moving_average(se->sof_direct[se->ind]);  //We do this now so that we don't have to calc to moving average durring the time we have two interrupts going off
         int16_t sof_error = se->sof_direct[se->ind] - se->sof_synthetic[se->ind];

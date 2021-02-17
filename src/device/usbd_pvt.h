@@ -36,34 +36,33 @@
 // Start of Frame (SOF) API
 //--------------------------------------------------------------------+
 
+#define TUSB_USBD_SOF_ERROR_BUFFER_SIZE 4
 
 //  uint32_t sof_us ; //USB "Start of Frame (sof)"  this is a sythetic value to provide better availability
 //   uint32_t eoa_us ; //This is the "End of availabilty"  which will not allow for reading of the sof after this period
 //   uint16_t interval_us ; // Approximate micro seconds of the system clock per frame 
 //   uint16_t avg_interval_us;
 //   uint8_t  eoa_margin_us ; //Microseconds before next sof to end availability
+typedef struct  {
+    volatile uint8_t ind ;
+    volatile uint16_t sof_direct[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
+    volatile uint16_t sof_synthetic[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
+    volatile int16_t sof_err[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
+    volatile int64_t cum_err;
+  } usbd_sof_err_t;
 typedef struct
 {
-  uint32_t sof_us ; 
-  uint32_t eoa_us ; 
-  uint16_t interval_us ; 
-  uint16_t avg_interval_us;
-  uint8_t  eoa_margin_us ;
-  enum  {
-        USBD_SOF_LOCKED = 0,
-        USBD_SOF_UNLOCKED
-        } lock_state;
+  volatile uint32_t sof_us ; 
+  volatile uint32_t eoa_us ; 
+  volatile uint16_t interval_us ; 
+  volatile uint16_t avg_interval_us;
+  volatile uint8_t  eoa_margin_us ;
+  volatile enum  {
+    USBD_SOF_LOCKED = 0,
+    USBD_SOF_UNLOCKED
+  } lock_state;
+  usbd_sof_err_t err;
 } usbd_sof_t;
-
-#define TUSB_USBD_SOF_ERROR_BUFFER_SIZE 4
-typedef struct
-{
-  uint8_t ind ;
-  uint16_t sof_direct[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
-  uint16_t sof_synthetic[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
-  int16_t sof_err[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
-  int64_t cum_err;
-} usbd_sof_err_t;
 
 //This two fuction are used by the direct and sythetic handlers to write their value of the sof timing for error calculation
 static inline void  usbd_sof_direct_for_error(uint32_t sof);
