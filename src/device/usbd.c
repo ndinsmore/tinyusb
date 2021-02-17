@@ -43,123 +43,6 @@
 
 
 //--------------------------------------------------------------------+
-// Start of Frame (SOF) Data
-//--------------------------------------------------------------------+
-
-volatile usbd_sof_t _usbd_sof = {
-  .interval_us = 1000,
-  .avg_interval_us = 1000,
-  .lock_state = USBD_SOF_UNLOCKED,
-  .eoa_margin_us = 5,
-  .err = {
-    .cum_err = 0
-  }
-};
-
-
-//This two fuction are used by the direct and sythetic handlers to write their value of the sof timing for error calculation
-static inline void usbd_sof_direct_for_error(uint32_t sof){
-      _usbd_sof.err.sof_direct[_usbd_sof.err.ind] = (uint16_t) sof; //We only store the first 16 bits
-}
-static inline void usbd_sof_synth_for_error(uint32_t sof){
-      _usbd_sof.err.sof_synthetic[_usbd_sof.err.ind] = (uint16_t) sof; //We only store the first 16 bits
-}
-uint32_t usbd_get_sof_us_32(usbd_sof_t * sof);
-uint16_t usbd_get_sof_us_16(usbd_sof_t * sof);
-
-bool usbd_set_sof(usbd_sof_t * sof, uint32_t sof_us, bool in_isr){
-  sof->sof_us = sof_us;
-  sof->eoa_us = sof_us + sof->interval_us - sof->eoa_margin_us;
-  return true;
-}
-
-// uint16_t usbd_incriment_sof(usbd_sof_t * sof, bool in_isr){
-//   //The next sof is calculated this way to make it more thread safe
-//   //It assumes that this function will be called from a timer IRQ
-//   //And that usbd_set_sof_interval could be called almost simultaneously
-//   sof->sof_us = sof->eoa_us + sof->eoa_margin_us;
-//   sof->eoa_us += sof->interval_us;
-//   return sof->sof_us;
-// }
-
-//It is recommended not to call this function every sof irq value should be averaged
-bool usbd_set_sof_interval(usbd_sof_t * sof,uint16_t new_interval, bool in_isr){
-  sof->interval_us = new_interval;
-  return true;
-}
-
-
-static void sof_interval_moving_average(uint16_t now)
-{
-    static uint32_t avg_interval_sum_us = 0; //This is the sum of 16 averages of 1000 micro seconds
-    static uint16_t avg_interval_us = 1000;
-    static int8_t num= -16; //THe initialization of -16 means that we still need to fill the averages 
-                            //After that this is a counter to how often the average interval is sent to the sof data
-    static uint8_t num_in_avg = 0;
-    static uint16_t last_time = 0;
-
-    uint8_t delta_window= (_usbd_sof.lock_state == USBD_SOF_UNLOCKED) ? 25 : 5;
-
-    if (last_time > 0){
-      if (num < 0){
-          avg_interval_sum_us += (now - last_time);
-          num++;
-      } else{
-          int16_t interval_delta_us = (now - last_time) - (avg_interval_sum_us >> 4);  //This is how different the current interval is from the average
-          //Make sure it was within 
-          if(( -delta_window <= interval_delta_us) && (interval_delta_us <= delta_window) )  
-          {
-              avg_interval_sum_us += interval_delta_us;
-          }
-          num = (num  < 100) ? num++ : 0;
-      }
-      if (num == 0) //We update the sof structure when ever 
-      {
-          _usbd_sof.avg_interval_us = avg_interval_sum_us >> 4;
-      }
-    }
-    last_time = now;
-}
-//This signifies that we are going to fire the task to set the sythetic SOF to the new value 5 us before the sof
-#define USBD_SOF_SYTHETIC_SET_US_BEFORE_SOF 15
-#define USBD_SOF_LOCKED_ERROR_LIMIT 100
-#define USBD_SOF_MID_FRAME_TASK_OFFSET_US 500
-
-static void usbd_sof_set_synthetic_handler(void){
-        uint32_t new_sof = _usbd_sof.sof_us + _usbd_sof.interval_us;
-        _usbd_sof.sof_us = new_sof;
-        usbd_sof_synth_for_error(new_sof);
-        dcd_alarm_trigger_function_at(usbd_sof_mid_frame_handler,new_sof+ USBD_SOF_MID_FRAME_TASK_OFFSET_US /* - USBD_SOF_SYTHETIC_SET_US_BEFORE_SOF*/);
-
-}
-#define ABS(a)	   (((a) < 0) ? -(a) : (a))
-static void usbd_sof_mid_frame_handler(void){
-        volatile usbd_sof_err_t *se =  &_usbd_sof.err;  //This pointer is just to reduce code clutter
-
-        sof_interval_moving_average(se->sof_direct[se->ind]);  //We do this now so that we don't have to calc to moving average durring the time we have two interrupts going off
-        int16_t sof_error = se->sof_direct[se->ind] - se->sof_synthetic[se->ind];  //Calculate the error 
-        se->sof_err[se->ind] = sof_error;
-
-        if (ABS(sof_error) > USBD_SOF_LOCKED_ERROR_LIMIT) {
-          _usbd_sof.lock_state = USBD_SOF_UNLOCKED;
-          static uint8_t out_counter = 0;
-          if( 0 == out_counter++){
-          printf("SOF-UL e= %zd\n",sof_error);
-          }
-          sof_error = sof_error >> 1;  //Fast division by 2
-        }
-        else
-        {//What to do if SOF is locked
-          _usbd_sof.lock_state = USBD_SOF_LOCKED;
-          se->cum_err += sof_error;
-        }
-        _usbd_sof.interval_us = _usbd_sof.avg_interval_us + sof_error;
-        se->ind++; 
-        //  printf("e: %zu\n",_usbd_sof.sof_us+_usbd_sof.interval_us - osal_time_us());
-        if( se->ind >= TUSB_USBD_SOF_ERROR_BUFFER_SIZE) se->ind = 0;
-        dcd_alarm_trigger_function_at(usbd_sof_set_synthetic_handler,_usbd_sof.sof_us+_usbd_sof.interval_us  - USBD_SOF_SYTHETIC_SET_US_BEFORE_SOF);
-}
-//--------------------------------------------------------------------+
 // Device Data
 //--------------------------------------------------------------------+
 typedef struct
@@ -253,7 +136,7 @@ static usbd_class_driver_t const _usbd_driver[] =
     .open             = audiod_open,
     .control_xfer_cb  = audiod_control_xfer_cb,
     .xfer_cb          = audiod_xfer_cb,
-    .sof              = NULL,
+    .sof              = NULL
   },
   #endif
 
@@ -355,6 +238,117 @@ static inline usbd_class_driver_t const * get_driver(uint8_t drvid)
 
 #define TOTAL_DRIVER_COUNT    (_app_driver_count + BUILTIN_DRIVER_COUNT)
 
+
+//--------------------------------------------------------------------+
+// Start of Frame (SOF) Data
+//--------------------------------------------------------------------+
+
+volatile usbd_sof_t _usbd_sof = {
+  .interval_us = 1000,
+  .avg_interval_us = 1000,
+  .lock_state = USBD_SOF_UNLOCKED,
+  .eoa_margin_us = 5,
+  .err = {
+    .cum_err = 0
+  }
+};
+
+
+//This two fuction are used by the direct and sythetic handlers to write their value of the sof timing for error calculation
+static inline void usbd_sof_direct_for_error(uint32_t sof){
+  _usbd_sof.err.sof_direct[_usbd_sof.err.ind] = (uint16_t) sof; //We only store the first 16 bits
+}
+static inline void usbd_sof_synth_for_error(uint32_t sof){
+  _usbd_sof.err.sof_synthetic[_usbd_sof.err.ind] = (uint16_t) sof; //We only store the first 16 bits
+}
+uint32_t usbd_get_sof_us_32(usbd_sof_t * sof);
+uint16_t usbd_get_sof_us_16(usbd_sof_t * sof);
+
+bool usbd_set_sof(usbd_sof_t * sof, uint32_t sof_us, bool in_isr){
+  sof->sof_us = sof_us;
+  sof->eoa_us = sof_us + sof->interval_us - sof->eoa_margin_us;
+  return true;
+}
+
+
+//It is recommended not to call this function every sof irq value should be averaged
+bool usbd_set_sof_interval(usbd_sof_t * sof,uint16_t new_interval, bool in_isr){
+  sof->interval_us = new_interval;
+  return true;
+}
+//Calculate the Exponential Moving Average of the Bus SOF interval
+//This function could be simplified to just using the cumulative error
+//Consider adding a method to reset this information for example due to being unpluged and repluged in to a different bus
+static void sof_interval_moving_average(uint16_t now)
+{
+  static uint32_t avg_interval_sum_us = 0; //This is the sum of 16 averages of 1000 micro seconds
+  static uint16_t avg_interval_us = 1000;
+  static int8_t num= -16; //The initialization of -16 means that we still need to fill the averages 
+                          //After that this is a counter to how often the average interval is sent to the sof data
+  static uint8_t num_in_avg = 0;
+  static uint16_t last_time = 0;
+
+  uint8_t delta_window= (_usbd_sof.lock_state == USBD_SOF_UNLOCKED) ? 25 : 5;
+
+  if (last_time > 0){
+    if (num < 0){
+        avg_interval_sum_us += (now - last_time);
+        num++;
+    } else{
+        int16_t interval_delta_us = (now - last_time) - (avg_interval_sum_us >> 4);  //This is how different the current interval is from the average
+        //Make sure it was within the window
+        if(( -delta_window <= interval_delta_us) && (interval_delta_us <= delta_window) )  
+        {
+            avg_interval_sum_us += interval_delta_us;
+        }
+        num = (num  < 100) ? num++ : 0;
+    }
+    if (num == 0) //We update the sof structure when ever 
+    {
+        _usbd_sof.avg_interval_us = avg_interval_sum_us >> 4;
+    }
+  }
+  last_time = now;
+}
+//This signifies that we are going to fire the task to set the sythetic SOF to the new value 5 us before the sof
+#define USBD_SOF_SYTHETIC_SET_US_BEFORE_SOF 15
+#define USBD_SOF_LOCKED_ERROR_LIMIT 100
+#define USBD_SOF_MID_FRAME_TASK_OFFSET_US 500
+
+static void usbd_sof_set_synthetic_handler(void){
+  uint32_t new_sof = _usbd_sof.sof_us + _usbd_sof.interval_us;
+  _usbd_sof.sof_us = new_sof;
+  usbd_sof_synth_for_error(new_sof);
+  dcd_alarm_trigger_function_at(usbd_sof_mid_frame_handler,new_sof+ USBD_SOF_MID_FRAME_TASK_OFFSET_US /* - USBD_SOF_SYTHETIC_SET_US_BEFORE_SOF*/);
+
+}
+#define ABS(a)	   (((a) < 0) ? -(a) : (a))
+static void usbd_sof_mid_frame_handler(void){
+  volatile usbd_sof_err_t *se =  &_usbd_sof.err;  //This pointer is just to reduce code clutter
+
+  sof_interval_moving_average(se->sof_direct[se->ind]);  //We do this now so that we don't have to calc to moving average durring the time we have two interrupts going off
+  int16_t sof_error = se->sof_direct[se->ind] - se->sof_synthetic[se->ind];  //Calculate the error 
+  se->sof_err[se->ind] = sof_error;
+
+  if (ABS(sof_error) > USBD_SOF_LOCKED_ERROR_LIMIT) {
+    _usbd_sof.lock_state = USBD_SOF_UNLOCKED;
+    static uint8_t out_counter = 0;
+    if( 0 == out_counter++){
+    printf("SOF-UL e= %zd\n",sof_error);
+    }
+    sof_error = sof_error >> 1;  //Fast division by 2
+  }
+  else
+  {//What to do if SOF is locked
+    _usbd_sof.lock_state = USBD_SOF_LOCKED;
+    se->cum_err += sof_error;
+  }
+  _usbd_sof.interval_us = _usbd_sof.avg_interval_us + sof_error;
+  se->ind++; 
+  //  printf("e: %zu\n",_usbd_sof.sof_us+_usbd_sof.interval_us - osal_time_us());
+  if( se->ind >= TUSB_USBD_SOF_ERROR_BUFFER_SIZE) se->ind = 0;
+  dcd_alarm_trigger_function_at(usbd_sof_set_synthetic_handler,_usbd_sof.sof_us+_usbd_sof.interval_us  - USBD_SOF_SYTHETIC_SET_US_BEFORE_SOF);
+}
 //--------------------------------------------------------------------+
 // DCD Event
 //--------------------------------------------------------------------+
@@ -520,6 +514,7 @@ bool tud_init (void)
   dcd_alarm_init(TUD_OPT_RHPORT); //Start the alarm that is used for the synthetic sof
   _usbd_sof.sof_us = time_us_32();  //Initialize the initial sof t be now
   usbd_sof_synth_for_error(_usbd_sof.sof_us); //store that value for inital error calculations
+
   //Schedule the mid fram handler which will also start the synthetic sof update
   dcd_alarm_trigger_function_at(usbd_sof_mid_frame_handler,_usbd_sof.sof_us+ USBD_SOF_MID_FRAME_TASK_OFFSET_US - USBD_SOF_SYTHETIC_SET_US_BEFORE_SOF);
 
@@ -1194,14 +1189,6 @@ void dcd_event_handler(dcd_event_t const * event, bool in_isr)
 void dcd_event_bus_signal (uint8_t rhport, dcd_eventid_t eid, bool in_isr)
 {
   dcd_event_t event = { .rhport = rhport, .event_id = eid };
-  dcd_event_handler(&event, in_isr);
-}
-
-void dcd_event_sof_signal (uint8_t rhport, uint32_t frame,uint32_t time, bool in_isr)
-{
-  dcd_event_t event = { .rhport = rhport, .event_id = DCD_EVENT_SOF };
-  event.sof.frame = frame;
-  event.sof.time = time;
   dcd_event_handler(&event, in_isr);
 }
 

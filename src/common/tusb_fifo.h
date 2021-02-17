@@ -65,13 +65,13 @@ typedef struct
   uint16_t depth                         ; ///< max items
   uint16_t item_size                     ; ///< size of each item
   bool overwritable                      ;
-  volatile uint16_t wr_idx               ; ///< write pointer
-  volatile uint16_t rd_idx               ; ///< read pointer
 
   uint16_t non_used_index_space          ; ///< required for non-power-of-two buffer length
   uint16_t max_pointer_idx               ; ///< maximum absolute pointer index
 
-  
+  volatile uint16_t wr_idx               ; ///< write pointer
+  volatile uint16_t rd_idx               ; ///< read pointer
+
 #if CFG_FIFO_MUTEX
   tu_fifo_mutex_t mutex;
 #endif

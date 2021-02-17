@@ -410,17 +410,12 @@ bool tu_fifo_read(tu_fifo_t* f, void * buffer)
 
   // Peek the data
   bool ret = _tu_fifo_peek_at(f, 0, buffer, f->wr_idx, f->rd_idx);    // f->rd_idx might get modified in case of an overflow so we can not use a local variable
-  if(f->rd_idx > f->max_pointer_idx){
-      printf("panic\n");
-    }
+
   // Advance pointer
   if(ret)
   {
       f->rd_idx = advance_pointer(f, f->rd_idx, 1);
   }
-  if(f->rd_idx > f->max_pointer_idx){
-      printf("panic\n");
-    }
 
   tu_fifo_unlock(f);
   return ret;

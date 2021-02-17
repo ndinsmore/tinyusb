@@ -222,7 +222,6 @@ static void _hw_endpoint_init(struct hw_endpoint *ep, uint8_t ep_addr, uint wMax
             _hw_endpoint_alloc(ep);
         }
     }
-    }
 
     ep->configured = true;
 }
@@ -342,15 +341,14 @@ static void hw_endpoint_clear_stall(uint8_t ep_addr)
     struct hw_endpoint *ep = hw_endpoint_get_by_addr(ep_addr);
     _hw_endpoint_clear_stall(ep);
 }
+// This protype is for the main "Bulk, Control, & Interrupt"  Haneler
 static void dcd_rp2040_BCInt(uint32_t status);
-
-
 
 //This should be kept very short and fast 
 //Fingers crossed most of the time it should never block
 static void dcd_rp2040_irq(void)
 {
-    uint32_t now = time_us_32();
+    uint32_t now = time_us_32();  //Get the time as soon as posible so it is close to the SOF interrupt
     uint32_t status = usb_hw->ints;
     uint32_t handled = 0;
 
@@ -361,7 +359,6 @@ static void dcd_rp2040_irq(void)
         uint16_t frame_num = usb_hw->sof_rd;
 
         dcd_irq_sof_handler(now,frame_num);
-       
     }
     status &= ~handled;
     dcd_rp2040_BCInt(status);
@@ -389,6 +386,7 @@ static void dcd_rp2040_BCInt(uint32_t status)
         handled |= USB_INTS_BUFF_STATUS_BITS;
         hw_handle_buff_status();
     }
+
     if (status & USB_INTS_BUS_RESET_BITS)
     {
         pico_trace("BUS RESET (addr %d -> %d)\n", usb_hw->dev_addr_ctrl, 0);
@@ -400,6 +398,7 @@ static void dcd_rp2040_BCInt(uint32_t status)
         rp2040_usb_device_enumeration_fix();
 #endif
     }
+    
     if (status ^ handled)
     {
         panic("Unhandled IRQ 0x%x\n", (uint) (status ^ handled));
@@ -504,7 +503,6 @@ void dcd_edpt0_status_complete(uint8_t rhport, tusb_control_request_t const * re
     {
         usb_hw->dev_addr_ctrl = (uint8_t) request->wValue;
         pico_trace("Set HW address %d\n", usb_hw->dev_addr_ctrl);
-
     }
 
     reset_ep0();

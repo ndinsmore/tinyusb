@@ -128,11 +128,6 @@ typedef struct
 static inline void  usbd_sof_direct_for_error(uint32_t sof);
 static inline void  usbd_sof_synth_for_error(uint32_t sof);
 
-
-
-// uint32_t usbd_get_sof_us_32(usbd_sof_t * sof);
-// uint16_t usbd_get_sof_us_16(usbd_sof_t * sof);
-
 //This really should only be used by initilization
 bool usbd_set_sof(usbd_sof_t * sof, uint32_t sof_us, bool in_isr);
 bool usbd_set_sof_interval(usbd_sof_t * sof, uint16_t interval_us, bool in_isr);
