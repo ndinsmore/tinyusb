@@ -54,7 +54,6 @@ typedef enum
 
   DCD_EVENT_COUNT
 } dcd_eventid_t;
-
 typedef struct TU_ATTR_ALIGNED(4)
 {
   uint8_t rhport;
@@ -76,6 +75,11 @@ typedef struct TU_ATTR_ALIGNED(4)
       uint8_t  result;
       uint32_t len;
     }xfer_complete;
+    
+    struct {
+      uint32_t frame;
+      uint32_t time;
+    }sof;
 
     // FUNC_CALL
     struct {
@@ -84,6 +88,8 @@ typedef struct TU_ATTR_ALIGNED(4)
     }func_call;
   };
 } dcd_event_t;
+
+
 
 //TU_VERIFY_STATIC(sizeof(dcd_event_t) <= 12, "size is not correct");
 
@@ -114,6 +120,18 @@ void dcd_connect(uint8_t rhport) TU_ATTR_WEAK;
 
 // Disconnect by disabling internal pull-up resistor on D+/D-
 void dcd_disconnect(uint8_t rhport) TU_ATTR_WEAK;
+
+//--------------------------------------------------------------------+
+// Alarm API
+//--------------------------------------------------------------------+
+
+typedef void(* dcd_alarm_callback_t )(void);  //This is the callback type used by usbd do not change
+
+// Initialize the alarm
+void dcd_alarm_init       (uint8_t rhport);
+
+// Set an alarm function to run at time_us, you will likely have to handle the role over of the 32bit time.
+void dcd_alarm_trigger_function_at(dcd_alarm_callback_t cb, uint32_t time_us);
 
 //--------------------------------------------------------------------+
 // Endpoint API
@@ -149,6 +167,9 @@ extern void dcd_event_handler(dcd_event_t const * event, bool in_isr);
 // helper to send bus signal event
 extern void dcd_event_bus_signal (uint8_t rhport, dcd_eventid_t eid, bool in_isr);
 
+extern void dcd_event_sof_signal (uint8_t rhport, uint32_t frame, uint32_t time, bool in_isr);
+
+
 // helper to send bus reset event
 extern void dcd_event_bus_reset (uint8_t rhport, tusb_speed_t speed, bool in_isr);
 
@@ -157,6 +178,10 @@ extern void dcd_event_setup_received(uint8_t rhport, uint8_t const * setup, bool
 
 // helper to send transfer complete event
 extern void dcd_event_xfer_complete (uint8_t rhport, uint8_t ep_addr, uint32_t xferred_bytes, uint8_t result, bool in_isr);
+
+//This is the irq helper function that handles the sof calculations
+extern void dcd_irq_sof_handler(uint32_t now, uint16_t frame_num);
+
 
 #ifdef __cplusplus
  }

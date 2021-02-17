@@ -31,6 +31,7 @@
 #include "pico/sem.h"
 #include "pico/mutex.h"
 #include "pico/critical_section.h"
+#include "hardware/timer.h"
 
 #ifdef __cplusplus
  extern "C" {
@@ -45,6 +46,15 @@ static inline void osal_task_delay(uint32_t msec)
     sleep_ms(msec);
 }
 #endif
+
+//--------------------------------------------------------------------+
+// TIMING API
+//--------------------------------------------------------------------+
+static inline uint32_t osal_time_us()
+{
+    return time_us_32();
+}
+
 
 //--------------------------------------------------------------------+
 // Binary Semaphore API

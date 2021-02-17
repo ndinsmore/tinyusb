@@ -1458,5 +1458,12 @@ bool tud_audio_fb_set(uint8_t rhport, uint32_t feedback)
   return audio_fb_send(rhport, audio);
 }
 #endif
+void audiod_sof_cb(uint8_t rhport){
+    //this is reporting 0 samples_for_frame right now because I don't know the best way to get the value
+    if (tud_audio_sof_cb) {
+      TU_VERIFY(tud_audio_sof_cb(rhport, 0),);
+    }
+}
+
 
 #endif //TUSB_OPT_DEVICE_ENABLED && CFG_TUD_AUDIO

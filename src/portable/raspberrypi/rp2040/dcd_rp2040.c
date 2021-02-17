@@ -30,6 +30,7 @@
 
 #include "pico.h"
 #include "rp2040_usb.h"
+#include "hardware/timer.h"
 
 #if TUD_OPT_RP2040_USB_DEVICE_ENUMERATION_FIX
 #include "pico/fix/rp2040_usb_device_enumeration.h"
@@ -37,7 +38,57 @@
 
 
 #include "device/dcd.h"
+#define TUSB_DCD_ALARM_NUM 2
 
+/*------------------------------------------------------------------*/
+/* Alarm handler
+ *------------------------------------------------------------------*/
+static uint _dcd_alarm_num = 0;
+
+static volatile dcd_alarm_callback_t _dcd_alarm_callback_function; 
+// Initialize the alarm
+
+static void _dcd_alarm_handler(uint alarm_num)
+{
+    _dcd_alarm_callback_function();
+
+}
+void dcd_alarm_init(uint8_t rhport){
+    hardware_alarm_claim(TUSB_DCD_ALARM_NUM);
+    _dcd_alarm_num=TUSB_DCD_ALARM_NUM;
+    hardware_alarm_set_callback(_dcd_alarm_num,_dcd_alarm_handler);
+}
+
+#define TUSB_DCD_ALARM_MAX_INTERVAL 3000 // THis value is to help with the role over check
+
+static void fix_time_rollover(uint32_t new_lower, uint32_t time_to_insert[])
+{
+    //Assume new lower is later than the lower 32 in the array and turn it into a delta time
+    new_lower -= time_to_insert[0];
+    //Now make sure it is smaller than the max interval
+    new_lower = (new_lower < TUSB_DCD_ALARM_MAX_INTERVAL) ? new_lower : TUSB_DCD_ALARM_MAX_INTERVAL;
+    //then just add the delta to the 64 bit time
+    ((uint64_t*)time_to_insert)[0] += new_lower;
+}
+
+// Set an alarm function to run at time_us, you will likely have to handle the role over of the 32bit time.
+void dcd_alarm_trigger_function_at(dcd_alarm_callback_t cb, uint32_t time_us)
+{
+    uint32_t time_to_set[2];  //This is an array to make it easier to manipulate the times
+    ((uint64_t*) time_to_set)[0] = time_us_64(); ///Get the current time to 
+    _dcd_alarm_callback_function = cb;
+    if (time_us < time_to_set[0]) //Check if we are less than the lower 32 which indicates a rollover may have happened.
+    {
+        fix_time_rollover(time_us,time_to_set);
+    }
+    else
+    {
+        time_to_set[0] = time_us;
+    }
+    absolute_time_t a_time;
+    update_us_since_boot(&a_time,((uint64_t*) time_to_set)[0]);
+    hardware_alarm_set_target(_dcd_alarm_num,a_time);
+}
 /*------------------------------------------------------------------*/
 /* Low level controller
  *------------------------------------------------------------------*/
@@ -291,10 +342,35 @@ static void hw_endpoint_clear_stall(uint8_t ep_addr)
     struct hw_endpoint *ep = hw_endpoint_get_by_addr(ep_addr);
     _hw_endpoint_clear_stall(ep);
 }
+static void dcd_rp2040_BCInt(uint32_t status);
 
+
+
+//This should be kept very short and fast 
+//Fingers crossed most of the time it should never block
 static void dcd_rp2040_irq(void)
 {
+    uint32_t now = time_us_32();
     uint32_t status = usb_hw->ints;
+    uint32_t handled = 0;
+
+    if (status & USB_INTS_DEV_SOF_BITS)
+    {
+        handled |= USB_INTS_DEV_SOF_BITS;
+        //This read clears the interrupt
+        uint16_t frame_num = usb_hw->sof_rd;
+
+        dcd_irq_sof_handler(now,frame_num);
+       
+    }
+    status &= ~handled;
+    dcd_rp2040_BCInt(status);
+}
+
+//This becomes the "BULK, Control, & Interrupt Handler"  which sends things through the queue
+//This is still handeling isochrons but it shouldn't
+static void dcd_rp2040_BCInt(uint32_t status)
+{
     uint32_t handled = 0;
 
     if (status & USB_INTS_SETUP_REQ_BITS)
@@ -313,10 +389,9 @@ static void dcd_rp2040_irq(void)
         handled |= USB_INTS_BUFF_STATUS_BITS;
         hw_handle_buff_status();
     }
-
     if (status & USB_INTS_BUS_RESET_BITS)
     {
-        pico_trace("BUS RESET (addr %d -> %d)\n", assigned_address, 0);
+        pico_trace("BUS RESET (addr %d -> %d)\n", usb_hw->dev_addr_ctrl, 0);
         usb_hw->dev_addr_ctrl = 0;
         handled |= USB_INTS_BUS_RESET_BITS;
         dcd_event_bus_signal(0, DCD_EVENT_BUS_RESET, true);
@@ -325,7 +400,6 @@ static void dcd_rp2040_irq(void)
         rp2040_usb_device_enumeration_fix();
 #endif
     }
-
     if (status ^ handled)
     {
         panic("Unhandled IRQ 0x%x\n", (uint) (status ^ handled));
@@ -367,7 +441,7 @@ void dcd_init (uint8_t rhport)
     // Enable individual controller IRQS here. Processor interrupt enable will be used
     // for the global interrupt enable...
     usb_hw->sie_ctrl = USB_SIE_CTRL_EP0_INT_1BUF_BITS; 
-    usb_hw->inte     = USB_INTS_BUFF_STATUS_BITS | USB_INTS_BUS_RESET_BITS | USB_INTS_SETUP_REQ_BITS;
+    usb_hw->inte     = USB_INTS_BUFF_STATUS_BITS | USB_INTS_BUS_RESET_BITS | USB_INTS_SETUP_REQ_BITS | USB_INTS_DEV_SOF_BITS;
 
     dcd_connect(rhport);
 }
@@ -428,8 +502,9 @@ void dcd_edpt0_status_complete(uint8_t rhport, tusb_control_request_t const * re
         request->bmRequestType_bit.type == TUSB_REQ_TYPE_STANDARD &&
         request->bRequest == TUSB_REQ_SET_ADDRESS)
     {
-        pico_trace("Set HW address %d\n", assigned_address);
         usb_hw->dev_addr_ctrl = (uint8_t) request->wValue;
+        pico_trace("Set HW address %d\n", usb_hw->dev_addr_ctrl);
+
     }
 
     reset_ep0();

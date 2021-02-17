@@ -243,6 +243,9 @@ static inline uint32_t     tud_audio_int_ctr_write         (uint8_t const* buffe
 // If the request's wLength is zero, a status packet is sent instead.
 bool tud_audio_buffer_and_schedule_control_xfer(uint8_t rhport, tusb_control_request_t const * p_request, void* data, uint16_t len);
 
+// Invoked when audio class specific get request received for an entity
+TU_ATTR_WEAK bool tud_audio_sof_cb(uint8_t rhport, uint16_t samples_for_frame);
+
 //--------------------------------------------------------------------+
 // Application Callback API (weak is optional)
 //--------------------------------------------------------------------+
@@ -292,6 +295,8 @@ TU_ATTR_WEAK bool tud_audio_get_req_itf_cb(uint8_t rhport, tusb_control_request_
 
 // Invoked when audio class specific get request received for an entity
 TU_ATTR_WEAK bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const * p_request);
+
+
 
 //--------------------------------------------------------------------+
 // Inline Functions
@@ -388,7 +393,8 @@ void audiod_init            (void);
 void audiod_reset           (uint8_t rhport);
 uint16_t audiod_open        (uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t max_len);
 bool audiod_control_xfer_cb (uint8_t rhport, uint8_t stage, tusb_control_request_t const * request);
-bool audiod_xfer_cb          (uint8_t rhport, uint8_t edpt_addr, xfer_result_t result, uint32_t xferred_bytes);
+bool audiod_xfer_cb         (uint8_t rhport, uint8_t edpt_addr, xfer_result_t result, uint32_t xferred_bytes);
+void audiod_sof_cb         (uint8_t rhport);
 
 #ifdef __cplusplus
 }

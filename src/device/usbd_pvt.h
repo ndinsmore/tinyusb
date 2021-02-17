@@ -32,7 +32,59 @@
 #ifdef __cplusplus
  extern "C" {
 #endif
+//--------------------------------------------------------------------+
+// Start of Frame (SOF) API
+//--------------------------------------------------------------------+
 
+
+//  uint32_t sof_us ; //USB "Start of Frame (sof)"  this is a sythetic value to provide better availability
+//   uint32_t eoa_us ; //This is the "End of availabilty"  which will not allow for reading of the sof after this period
+//   uint16_t interval_us ; // Approximate micro seconds of the system clock per frame 
+//   uint16_t avg_interval_us;
+//   uint8_t  eoa_margin_us ; //Microseconds before next sof to end availability
+typedef struct
+{
+  uint32_t sof_us ; 
+  uint32_t eoa_us ; 
+  uint16_t interval_us ; 
+  uint16_t avg_interval_us;
+  uint8_t  eoa_margin_us ;
+  enum  {
+        USBD_SOF_LOCKED = 0,
+        USBD_SOF_UNLOCKED
+        } lock_state;
+} usbd_sof_t;
+
+#define TUSB_USBD_SOF_ERROR_BUFFER_SIZE 4
+typedef struct
+{
+  uint8_t ind ;
+  uint16_t sof_direct[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
+  uint16_t sof_synthetic[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
+  int16_t sof_err[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
+  int64_t cum_err;
+} usbd_sof_err_t;
+
+//This two fuction are used by the direct and sythetic handlers to write their value of the sof timing for error calculation
+static inline void  usbd_sof_direct_for_error(uint32_t sof);
+static inline void  usbd_sof_synth_for_error(uint32_t sof);
+
+
+
+uint32_t usbd_get_sof_us_32(usbd_sof_t * sof);
+uint16_t usbd_get_sof_us_16(usbd_sof_t * sof);
+
+
+//This really should only be used by initilization
+bool usbd_set_sof(usbd_sof_t * sof, uint32_t sof_us, bool in_isr);
+
+//This function incriments to the next sof and is intended to be call from an IRQ
+// uint16_t usbd_incriment_sof(usbd_sof_t * sof, bool in_isr);
+
+bool usbd_set_sof_interval(usbd_sof_t * sof, uint16_t interval_us, bool in_isr);
+
+static void usbd_sof_set_synthetic_handler(void);
+static void usbd_sof_mid_frame_handler(void);
 //--------------------------------------------------------------------+
 // Class Drivers
 //--------------------------------------------------------------------+

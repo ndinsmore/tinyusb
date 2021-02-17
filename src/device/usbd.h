@@ -43,11 +43,31 @@ extern "C" {
 // Init device stack
 bool tud_init (void);
 
+// This task should be the first task in the loop and handle the sof and getting syncronised
+void tud_sof_task (void);
+
+// Task for isochronous transfers which is effectively a seperate state machine
+void tud_iso_task (void);
+
 // Task function should be called in main/rtos loop
 void tud_task (void);
 
+void poll_tud_timing(uint32_t dest[]);
 // Check if there is pending events need proccessing by tud_task()
 bool tud_task_event_ready(void);
+
+// uint32_t tud_get_sof_us_32();
+// uint16_t tud_get_sof_us_16();
+enum{
+  USBD_SOF_INVALID = 0,  //In general these states are increasing in accuracy and priority
+  USBD_SOF_BLIND,  //This is for when the application is blind to the SOF, this will be most applications
+  USBD_SOF_SOFTWARE_LOW,
+  USBD_SOF_SOFTWARE_HIGH,
+  USBD_SOF_SYNTHETIC,  //using hardware timer for SOF and SOF interrupt for calculation of delta 
+                            //This should be used for classes that require Isochronous streams
+  USBD_SOF_DIRECT  //set by the SOF frame interrupt, don't do this
+} usbd_sof_status_t;
+
 
 // Interrupt handler, name alias to DCD
 extern void dcd_int_handler(uint8_t rhport);
