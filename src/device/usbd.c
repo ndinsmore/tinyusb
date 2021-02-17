@@ -142,7 +142,10 @@ static void usbd_sof_mid_frame_handler(void){
 
         if (ABS(sof_error) > USBD_SOF_LOCKED_ERROR_LIMIT) {
           _usbd_sof.lock_state = USBD_SOF_UNLOCKED;
+          static uint8_t out_counter = 0;
+          if( 0 == out_counter++){
           printf("SOF-UL e= %zd\n",sof_error);
+          }
           sof_error = sof_error >> 1;  //Fast division by 2
         }
         else

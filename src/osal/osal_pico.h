@@ -133,7 +133,11 @@ typedef osal_queue_def_t* osal_queue_t;
       .depth        = _depth,                       \
       .item_size    = sizeof(_type),                \
       .overwritable = false,                        \
+<<<<<<< HEAD
        .max_pointer_idx        = 2*_depth-1,                           \
+=======
+      .max_pointer_idx        = 2*_depth-1,                           \
+>>>>>>> b2f46dd7... working
       .non_used_index_space   = UINT16_MAX - (2*_depth-1),                  \
     }\
   }
