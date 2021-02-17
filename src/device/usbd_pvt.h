@@ -32,58 +32,7 @@
 #ifdef __cplusplus
  extern "C" {
 #endif
-//--------------------------------------------------------------------+
-// Start of Frame (SOF) API
-//--------------------------------------------------------------------+
 
-#define TUSB_USBD_SOF_ERROR_BUFFER_SIZE 4
-
-//  uint32_t sof_us ; //USB "Start of Frame (sof)"  this is a sythetic value to provide better availability
-//   uint32_t eoa_us ; //This is the "End of availabilty"  which will not allow for reading of the sof after this period
-//   uint16_t interval_us ; // Approximate micro seconds of the system clock per frame 
-//   uint16_t avg_interval_us;
-//   uint8_t  eoa_margin_us ; //Microseconds before next sof to end availability
-typedef struct  {
-    volatile uint8_t ind ;
-    volatile uint16_t sof_direct[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
-    volatile uint16_t sof_synthetic[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
-    volatile int16_t sof_err[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
-    volatile int64_t cum_err;
-  } usbd_sof_err_t;
-typedef struct
-{
-  volatile uint32_t sof_us ; 
-  volatile uint32_t eoa_us ; 
-  volatile uint16_t interval_us ; 
-  volatile uint16_t avg_interval_us;
-  volatile uint8_t  eoa_margin_us ;
-  volatile enum  {
-    USBD_SOF_LOCKED = 0,
-    USBD_SOF_UNLOCKED
-  } lock_state;
-  usbd_sof_err_t err;
-} usbd_sof_t;
-
-//This two fuction are used by the direct and sythetic handlers to write their value of the sof timing for error calculation
-static inline void  usbd_sof_direct_for_error(uint32_t sof);
-static inline void  usbd_sof_synth_for_error(uint32_t sof);
-
-
-
-uint32_t usbd_get_sof_us_32(usbd_sof_t * sof);
-uint16_t usbd_get_sof_us_16(usbd_sof_t * sof);
-
-
-//This really should only be used by initilization
-bool usbd_set_sof(usbd_sof_t * sof, uint32_t sof_us, bool in_isr);
-
-//This function incriments to the next sof and is intended to be call from an IRQ
-// uint16_t usbd_incriment_sof(usbd_sof_t * sof, bool in_isr);
-
-bool usbd_set_sof_interval(usbd_sof_t * sof, uint16_t interval_us, bool in_isr);
-
-static void usbd_sof_set_synthetic_handler(void);
-static void usbd_sof_mid_frame_handler(void);
 //--------------------------------------------------------------------+
 // Class Drivers
 //--------------------------------------------------------------------+
@@ -147,6 +96,51 @@ bool usbd_edpt_ready(uint8_t rhport, uint8_t ep_addr)
 {
   return !usbd_edpt_busy(rhport, ep_addr) && !usbd_edpt_stalled(rhport, ep_addr);
 }
+//--------------------------------------------------------------------+
+// Start of Frame (SOF) API
+//--------------------------------------------------------------------+
+
+#define TUSB_USBD_SOF_ERROR_BUFFER_SIZE 4
+
+typedef struct  {
+    volatile uint8_t ind ;
+    volatile uint16_t sof_direct[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
+    volatile uint16_t sof_synthetic[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
+    volatile int16_t sof_err[TUSB_USBD_SOF_ERROR_BUFFER_SIZE];
+    volatile int64_t cum_err;
+  } usbd_sof_err_t;
+
+typedef struct
+{
+  volatile uint32_t sof_us ;          //USB "Start of Frame (sof)"  this is a sythetic value to provide better availability
+  volatile uint32_t eoa_us ;          //This is the "End of availabilty"  which will not allow for reading of the sof after this time
+  volatile uint16_t interval_us ;     // Exact number of microseconds between current SOF and the next as adjusted by mid frame handler
+  volatile uint16_t avg_interval_us;  //Averaged microseconds between each USB SOF
+  volatile uint8_t  eoa_margin_us ;   //Microseconds before next sof to end availability
+  volatile enum  {
+    USBD_SOF_LOCKED = 0,
+    USBD_SOF_UNLOCKED
+  } lock_state;
+  usbd_sof_err_t err;
+} usbd_sof_t;
+
+//This two fuction are used by the direct and sythetic handlers to write their value of the sof timing for error calculation
+static inline void  usbd_sof_direct_for_error(uint32_t sof);
+static inline void  usbd_sof_synth_for_error(uint32_t sof);
+
+
+
+// uint32_t usbd_get_sof_us_32(usbd_sof_t * sof);
+// uint16_t usbd_get_sof_us_16(usbd_sof_t * sof);
+
+//This really should only be used by initilization
+bool usbd_set_sof(usbd_sof_t * sof, uint32_t sof_us, bool in_isr);
+bool usbd_set_sof_interval(usbd_sof_t * sof, uint16_t interval_us, bool in_isr);
+
+//This is the Start of Frame interrupt function that actually sets the SOF time and shoudl be scheduled a few microseconds before when the next SOF should start
+static void usbd_sof_set_synthetic_handler(void);  
+//This is the Mid Frame alarm handler that does all the calulations for getting the real and synthetic sof in sync 
+static void usbd_sof_mid_frame_handler(void);
 
 /*------------------------------------------------------------------*/
 /* Helper

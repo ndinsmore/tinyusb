@@ -137,7 +137,7 @@ static void usbd_sof_mid_frame_handler(void){
         volatile usbd_sof_err_t *se =  &_usbd_sof.err;  //This pointer is just to reduce code clutter
 
         sof_interval_moving_average(se->sof_direct[se->ind]);  //We do this now so that we don't have to calc to moving average durring the time we have two interrupts going off
-        int16_t sof_error = se->sof_direct[se->ind] - se->sof_synthetic[se->ind];
+        int16_t sof_error = se->sof_direct[se->ind] - se->sof_synthetic[se->ind];  //Calculate the error 
         se->sof_err[se->ind] = sof_error;
 
         if (ABS(sof_error) > USBD_SOF_LOCKED_ERROR_LIMIT) {
