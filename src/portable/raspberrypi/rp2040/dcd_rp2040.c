@@ -171,6 +171,7 @@ static void _hw_endpoint_init(struct hw_endpoint *ep, uint8_t ep_addr, uint wMax
             _hw_endpoint_alloc(ep);
         }
     }
+    }
 
     ep->configured = true;
 }
